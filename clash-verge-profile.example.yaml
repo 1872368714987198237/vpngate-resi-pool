@@ -1,0 +1,251 @@
+# ==============================================================================
+# Mihomo (v1.19.25+) 多订阅聚合 + 家宽链式代理 模板配置
+# 适用客户端：Clash Verge Rev（作为「独立配置 Profile」新建并启用）
+# 无 VPS / 无 Cloudflare Workers & Pages；7897 单端口，需要纯净家宽出口时
+# 在代理页把 🚀 日常规则分流 切到 🏡 纯净家宽手选 即可
+# ==============================================================================
+
+mixed-port: 7897
+allow-lan: false
+bind-address: 127.0.0.1
+mode: rule
+log-level: info
+ipv6: false
+unified-delay: true
+tcp-concurrent: true
+keep-alive-interval: 30
+find-process-mode: strict
+geodata-mode: true
+
+# ------------------------------------------------------------------------------
+# DNS 配置：防止 dialer-proxy 解析死锁 + 防止国内 DNS 泄露（无 Cloudflare DNS）
+# ------------------------------------------------------------------------------
+dns:
+  enable: true
+  listen: 127.0.0.1:1053
+  ipv6: false
+  enhanced-mode: fake-ip
+  fake-ip-range: 198.18.0.1/16
+  fake-ip-filter:
+    - "*.lan"
+    - "*.local"
+    - "localhost.ptlogin2.qq.com"
+    - "time.*.com"
+    - "ntp.*.com"
+    - "+.stun.*.*"
+    - "+.pool.ntp.org"
+  respect-rules: true
+  default-nameserver:
+    - 223.5.5.5
+    - 119.29.29.29
+  # 专用于解析机场/落地节点自身域名的 DNS，强制直连国内 DoH，避免与 dialer-proxy 死锁
+  proxy-server-nameserver:
+    - https://223.5.5.5/dns-query
+    - https://1.12.12.12/dns-query
+  direct-nameserver:
+    - https://223.5.5.5/dns-query
+    - https://1.12.12.12/dns-query
+  # 海外域名 DNS（配合 respect-rules: true 强制走代理出站，防止 GFW 污染与泄露）
+  nameserver:
+    - https://8.8.8.8/dns-query
+    - https://9.9.9.9/dns-query
+  nameserver-policy:
+    "geosite:cn,private":
+      - https://223.5.5.5/dns-query
+      - https://1.12.12.12/dns-query
+
+sniffer:
+  enable: true
+  parse-pure-ip: true
+  sniff:
+    HTTP:
+      ports: [80, 8080-8880]
+      override-destination: true
+    TLS:
+      ports: [443, 8443]
+    QUIC:
+      ports: [443, 8443]
+
+# ------------------------------------------------------------------------------
+# 通用 Provider 锚点定义（简化重复字段）
+# ------------------------------------------------------------------------------
+x-airport-common: &airport_common
+  type: http
+  interval: 43200
+  proxy: DIRECT
+  # 过滤机场常见的流量/到期/官网/公告/0倍率等无效信息节点
+  exclude-filter: "(?i)(剩余|流量|到期|重置|过期|官网|网址|域名|群组|频道|通知|公告|更新|订阅|客服|套餐|续费|邀请|返利|使用说明|Traffic|Expire|Reset|Website|Channel|Telegram|Support|Test|Info|倍率0|0x|0\\.0|失联|防丢|回国)"
+  health-check:
+    enable: true
+    url: "https://www.gstatic.com/generate_204"
+    interval: 180
+    timeout: 5000
+    lazy: false
+    expected-status: 204
+
+# ------------------------------------------------------------------------------
+# Proxy Providers：多机场订阅聚合 + GitHub 家宽池 + 本地独享住宅池
+# ------------------------------------------------------------------------------
+proxy-providers:
+  sub_microrss:
+    <<: *airport_common
+    url: "https://YOUR_AIRPORT_SUB_1"
+    path: ./proxy_providers/sub_microrss.yaml
+    override:
+      udp: true
+      additional-prefix: "[机场1] "
+
+  sub_xsus:
+    <<: *airport_common
+    url: "https://YOUR_AIRPORT_SUB_2"
+    path: ./proxy_providers/sub_xsus.yaml
+    override:
+      udp: true
+      additional-prefix: "[机场2] "
+
+  sub_nano:
+    <<: *airport_common
+    url: "https://YOUR_AIRPORT_SUB_3"
+    path: ./proxy_providers/sub_nano.yaml
+    override:
+      udp: true
+      additional-prefix: "[机场3] "
+
+  # 从你的 GitHub 仓库拉取 Actions 定时清洗后的 VPN Gate ISP/家宽 OpenVPN 节点
+  # 关键：通过机场前置池下载 GitHub Raw，并通过 override.dialer-proxy 挂载链式代理！
+  vpngate_isp:
+    type: http
+    url: "https://raw.githubusercontent.com/YOUR_GITHUB_USER/YOUR_REPO/main/dist/vpngate-isp.yaml"  # ← 改成你的仓库地址
+    path: ./proxy_providers/vpngate_isp.yaml
+    interval: 7200
+    proxy: "✈️ 机场前置稳定池"
+    override:
+      dialer-proxy: "✈️ 机场前置稳定池"
+      additional-prefix: "[VG] "
+    health-check:
+      enable: true
+      url: "https://www.gstatic.com/generate_204"
+      interval: 300
+      timeout: 8000
+      lazy: false
+      expected-status: 204
+
+  # （可选）后续自购的静态住宅 SOCKS5 / HTTP 节点，填好 custom_residential.yaml 后取消下面注释即可
+  # custom_residential:
+  #   type: file
+  #   path: ./proxy_providers/custom_residential.yaml
+  #   interval: 3600
+  #   override:
+  #     dialer-proxy: "✈️ 机场前置稳定池"
+  #     additional-prefix: "[独享] "
+  #   health-check:
+  #     enable: true
+  #     url: "https://www.gstatic.com/generate_204"
+  #     interval: 300
+  #     timeout: 6000
+  #     lazy: false
+  #     expected-status: 204
+
+# ------------------------------------------------------------------------------
+# Proxy Groups：链式前跳 + 机场/家宽并存负载均衡 + 端口隔离控制组
+# （不使用已废弃的 type: relay，全部采用 dialer-proxy + 原生策略组）
+# ------------------------------------------------------------------------------
+proxy-groups:
+  # 1. 所有链式家宽节点的“第一跳”：自动从 3 家机场中选延迟稳定且健康的节点过墙
+  - name: "✈️ 机场前置稳定池"
+    type: url-test
+    use:
+      - sub_microrss
+      - sub_xsus
+      - sub_nano
+    url: "https://www.gstatic.com/generate_204"
+    interval: 180
+    tolerance: 80
+    lazy: false
+
+  # 2. AI 专用混合均衡池（默认给 2api 用）：机场 + 家宽并存，并自动剔除 HK/MO/CN/RU 等易被 AI 封锁的地区
+  - name: "🤖 2api AI专用混合池"
+    type: load-balance
+    strategy: round-robin
+    use:
+      - sub_microrss
+      - sub_xsus
+      - sub_nano
+      - vpngate_isp
+      # - custom_residential
+    exclude-filter: "(?i)(香港|港|HK|Hong\\s*Kong|澳门|澳|MO|Macau|中国|CN|China|俄罗斯|俄|RU|Russia)"
+    url: "https://www.gstatic.com/generate_204"
+    interval: 180
+
+  # 3. 全区域混合均衡池：机场 + 家宽全部节点无差别轮询（追求最大 IP 数量时可选此项）
+  - name: "⚡ 2api 全区域混合池"
+    type: load-balance
+    strategy: round-robin
+    use:
+      - sub_microrss
+      - sub_xsus
+      - sub_nano
+      - vpngate_isp
+      # - custom_residential
+    url: "https://www.gstatic.com/generate_204"
+    interval: 180
+
+  # 4. 纯机场负载均衡池
+  - name: "🛡️ 2api 纯机场均衡池"
+    type: load-balance
+    strategy: round-robin
+    use:
+      - sub_microrss
+      - sub_xsus
+      - sub_nano
+    exclude-filter: "(?i)(香港|港|HK|Hong\\s*Kong|澳门|澳|MO|Macau|中国|CN|China|俄罗斯|俄|RU|Russia)"
+    url: "https://www.gstatic.com/generate_204"
+    interval: 180
+
+  # 5. 纯家宽负载均衡池
+  - name: "🏠 纯家宽均衡池"
+    type: load-balance
+    strategy: round-robin
+    use:
+      - vpngate_isp
+      # - custom_residential
+    url: "https://www.gstatic.com/generate_204"
+    interval: 300
+
+  # 6. 总控：默认走「机场+家宽混合并存且去HK」的 AI 专用池，可在 UI 一键切换
+  - name: "🎯 2api 入口总控"
+    type: select
+    proxies:
+      - "🤖 2api AI专用混合池"
+      - "⚡ 2api 全区域混合池"
+      - "🛡️ 2api 纯机场均衡池"
+      - "🏠 纯家宽均衡池"
+
+  # 7. 手选组：浏览器注册账号/高风控操作时可精确点选某一个干净家宽 IP
+  - name: "🏡 纯净家宽手选"
+    type: select
+    use:
+      - vpngate_isp
+      # - custom_residential
+    proxies:
+      - "🏠 纯家宽均衡池"
+      - "✈️ 机场前置稳定池"
+
+  # 8. 日常系统代理（7897）走规则分流；需要纯净家宽出口时在 UI 切到 🏡 纯净家宽手选
+  - name: "🚀 日常规则分流"
+    type: select
+    proxies:
+      - "✈️ 机场前置稳定池"
+      - "🎯 2api 入口总控"
+      - "🏡 纯净家宽手选"
+      - DIRECT
+
+# ------------------------------------------------------------------------------
+# 分流规则（作用于 7897 入站的日常流量）
+# ------------------------------------------------------------------------------
+rules:
+  - GEOSITE,private,DIRECT
+  - GEOIP,private,DIRECT,no-resolve
+  - GEOSITE,cn,DIRECT
+  - GEOIP,cn,DIRECT,no-resolve
+  - MATCH,🚀 日常规则分流

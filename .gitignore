@@ -1,0 +1,11 @@
+# 本地含敏感订阅链接/私密家宽凭据的文件，绝对禁止提交到 GitHub
+clash-verge-profile.yaml
+proxy_providers/custom_residential.yaml
+local_*.yaml
+*.secret.yaml
+.env
+__pycache__/
+*.pyc
+# 池产物含机场节点凭据（uuid/password），严禁入库；data/ 含订阅原文
+dist/pool-for-2api.yaml
+data/

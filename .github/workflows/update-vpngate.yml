@@ -1,0 +1,54 @@
+name: Update VPN Gate Residential Pool
+
+on:
+  schedule:
+    # 每 4 小时自动拉取并清洗一次
+    - cron: "0 */4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-vpngate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Fetch & filter VPN Gate OpenVPN nodes
+        run: |
+          python scripts/fetch_vpngate.py --isp-limit 35 --all-limit 80 --out-dir dist
+
+      - name: Write job summary
+        if: always() && hashFiles('dist/summary.json') != ''
+        run: |
+          python - << 'EOF'
+          import json, os
+          s = json.loads(open("dist/summary.json", encoding="utf-8").read())
+          summary_file = os.environ.get("GITHUB_STEP_SUMMARY")
+          if summary_file:
+              with open(summary_file, "a", encoding="utf-8") as f:
+                  f.write(f"### VPN Gate 节点更新 ({s['updated_at_utc']})\n")
+                  f.write(f"- **ISP/家宽池 (`dist/vpngate-isp.yaml`)**: {s['emitted_isp']} 个\n")
+                  f.write(f"- **全量兼容池 (`dist/vpngate-all.yaml`)**: {s['emitted_all']} 个\n")
+                  f.write(f"- **覆盖国家/地区**: {', '.join(s['isp_countries'])}\n")
+                  f.write(f"- **原始统计**: `{json.dumps(s['stats'], ensure_ascii=False)}`\n")
+          EOF
+
+      - name: Commit and push updated YAML
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add dist/vpngate-isp.yaml dist/vpngate-all.yaml dist/summary.json
+          if git diff --staged --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "chore: update vpngate mihomo pool [skip ci]"
+            git push
+          fi

@@ -1,0 +1,23 @@
+# =====================================================================
+# 自定义静态住宅 SOCKS5 / HTTP 落地节点模板
+# 使用方式：
+#   1. 复制本文件为 proxy_providers/custom_residential.yaml（已被 .gitignore 忽略）
+#   2. 填入你的独享/静态住宅 IP（无需写 dialer-proxy，主配置里已通过 override 自动挂载前置链式代理）
+#   3. 在 clash-verge-profile.yaml 中取消 custom_residential 的注释即可热加载
+# =====================================================================
+proxies:
+  - name: "US-Static-Resi-01"
+    type: socks5
+    server: 198.51.100.10
+    port: 1080
+    username: "your_user"
+    password: "your_password"
+    udp: true
+
+  - name: "JP-Static-HTTP-01"
+    type: http
+    server: 203.0.113.20
+    port: 8080
+    username: "your_user"
+    password: "your_password"
+    tls: false
