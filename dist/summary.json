@@ -1,20 +1,19 @@
 {
-  "updated_at_utc": "2026-11-18 12:29:57 UTC",
+  "updated_at_utc": "2026-11-18 22:46:43 UTC",
   "stats": {
-    "total_rows": 98,
-    "compatible": 98,
-    "tier_DC": 2,
-    "tier_EDU": 9,
-    "tier_ISP": 87
+    "total_rows": 96,
+    "compatible": 96,
+    "tier_EDU": 11,
+    "tier_ISP": 83,
+    "tier_DC": 2
   },
   "emitted_isp": 35,
   "emitted_all": 80,
   "isp_countries": [
-    "FR",
-    "ID",
     "JP",
     "KR",
+    "MX",
     "RU",
-    "VN"
+    "TH"
   ]
 }
